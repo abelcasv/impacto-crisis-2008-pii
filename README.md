@@ -4,6 +4,10 @@ Proyecto académico de análisis exploratorio y visualización de datos realizad
 
 El proyecto estudia la evolución de la Posición de Inversión Internacional de **España, Italia y Alemania** durante el periodo de la crisis financiera de 2008, utilizando técnicas de análisis y visualización de datos.
 
+## Proyecto
+
+[**Ver memoria y proyecto online**](https://abelcasv.github.io/impacto-crisis-2008-pii/)
+
 ## Tecnologías
 
 * R
@@ -58,4 +62,4 @@ El proyecto incluyó un dashboard interactivo desarrollado mediante R Markdown. 
 
 ## Documentación
 
-La memoria completa del proyecto está disponible en [`docs/memoria.html`](docs/memoria.html).
+[Ver memoria completa del proyecto](docs/memoria.html)
