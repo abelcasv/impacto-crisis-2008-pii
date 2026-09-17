@@ -41,6 +41,17 @@ El proyecto estudia la evolución de la Posición de Inversión Internacional de
     └── memoria.html
 ```
 
+## Datos
+
+Por motivos de tamaño, no se incluyen en el repositorio algunos datasets intermedios generados durante el proceso de limpieza y transformación:
+
+- `Data_Filtered.rds`
+- `Data_Trabajo.rds`
+
+Estos archivos se utilizaron durante el desarrollo del proyecto, pero se han excluido para mantener el repositorio ligero y facilitar su consulta.
+
+El repositorio incluye los scripts, la documentación y los archivos de datos seleccionados utilizados en el análisis.
+
 ## Dashboard
 
 El proyecto incluyó un dashboard interactivo desarrollado mediante R Markdown. La versión desplegada originalmente dependía de infraestructura de la universidad y actualmente no se encuentra disponible públicamente.
