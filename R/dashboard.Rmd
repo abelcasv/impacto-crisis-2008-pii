@@ -1,0 +1,1622 @@
+---
+title: "Posicion de Inversión Internacional"
+output: flexdashboard::flex_dashboard
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+library(pxR)
+library(MASS)
+library(shinydashboard)
+library(datasets)
+library(highcharter) 
+library(fpp3)
+library(RColorBrewer)
+library(openxlsx)  
+library(leaflet)  
+library(geojsonio)
+library(plotly)
+library(ggplot2)
+library(tidyverse)
+library(forecast)
+library(DT)
+library(sf)
+library(rnaturalearth)
+library(dplyr)
+library(htmltools)
+library(flexdashboard)
+
+
+#source("utilidades.R")
+pdf(file = NULL) # evita errores en shiny 
+
+# asociamos funciones a determinadas librerías para evitar posibles errores 
+filter <- dplyr::filter # Filtra filas según condiciones
+select <- dplyr::select # Selecciona columnas
+mutate <- dplyr::mutate # Crea o modifica columnas
+arrange <- dplyr::arrange # Ordena filas
+group_by <- dplyr::group_by # Agrupa datos
+summarise <- dplyr::summarise # Resume variables (por ejemplo, con medias, conteos)
+summarize <- dplyr::summarize # Lo mismo que summarise
+rename <- dplyr::rename # Cambia nombres de columnas
+distinct <- dplyr::distinct # Elimina filas duplicadas
+slice<- dplyr::slice # Selecciona filas por posición
+relocate<- dplyr::relocate # Reordena columnas
+selectInput <- shiny::selectInput
+```
+
+
+```{r, filtrado en profundidad}
+# paises_dashboard <- c(
+#   "ES", "DE", "FR", "IT", "PT", "EL", # Sur y centro UE
+#   "NL", "IE", "FI", "AT", "BE",       # Norte y centro
+#   "SE", "DK", "PL"                    # Nórdicos y Este
+# )
+# data_dashboard <- data %>% 
+#     filter(freq == 'Q',
+#            currency == 'MIO_EUR',
+#            bop_item %in% c('FA','FA__D__F','FA__P__F3','FA__O__F4','FA__R__F2'),
+#            sector10 %in% c('S1', 'S121', 'S122', 'S13', 'S11'),
+#            stk_flow %in% c('A_LE', 'L_LE', 'N_LE'),
+#            geo %in% paises_dashboard,
+#            partner %in% c('WRL_REST','EA20','EXT_EA20','EU28', 'EXT_EU28','US'),
+#            year(TIME_PERIOD) >= 2000 & year(TIME_PERIOD) <= 2024
+#            ) %>% 
+#     filter(!is.na(values)) %>%
+#     select(-sectpart, -NUTS) %>% 
+#    rename(
+#      frecuencia = freq,
+#      moneda = currency,
+#      `instrumento financiero` = bop_item,
+#      sector = sector10,
+#      flujo = stk_flow,
+#      pais = geo,
+#      contraparte = partner,
+#      valor = values,
+#      periodo = TIME_PERIOD
+#    ) %>% 
+#    mutate(
+#      flujo = recode(flujo,
+#                     "A_LE" = "Activos",
+#                     "L_LE" = "Pasivos",
+#                     "N_LE" = "Neto"),
+#      `instrumento financiero` = recode(`instrumento financiero`,
+#                       "FA" = "Cuenta financiera total",
+#                       "FA__D__F" = "Inversión Directa",
+#                       "FA__P__F3" = "Inversión en Cartera (bonos y valores)",
+#                       "FA__O__F4" = "Otros instrumentos de inversión",
+#                       "FA__R__F2" = "Reservas oficiales (banco central)"),
+#      sector = recode(sector,
+#                      "S1" = "Total Economía",
+#                      "S121" = "Bancos Centrales",
+#                      "S122" = "Otras Instituciones Financieras",
+#                      "S13" = "Administraciones Públicas",
+#                      "S11" = "Sociedades No Financieras"),
+#      pais = recode(pais,
+#                   "ES" = "España",
+#                   "DE" = "Alemania",
+#                   "FR" = "Francia",
+#                   "IT" = "Italia",
+#                   "PT" = "Portugal",
+#                   "EL" = "Grecia",
+#                   "NL" = "Países Bajos",
+#                   "IE" = "Irlanda",
+#                   "FI" = "Finlandia",
+#                   "AT" = "Austria",
+#                   "BE" = "Bélgica",
+#                   "SE" = "Suecia",
+#                   "DK" = "Dinamarca",
+#                   "PL" = "Polonia"),
+#      contraparte = recode(contraparte,
+#                           "WRL_REST" = "Resto del mundo",
+#                           "EA20" = "Zona Euro (EA20)",
+#                           "EXT_EA20" = "Fuera Zona Euro",
+#                           "EU28" = "Unión Europea (EU28)",
+#                           "EXT_EU28" = "Fuera UE28",
+#                           "US" = "Estados Unidos"),
+#      moneda = recode(moneda,
+#                      "MIO_EUR" = "Millones EUR")
+#    ) %>% 
+#    select(-frecuencia) %>% 
+#    select(
+#      periodo,
+#      pais,
+#      contraparte,
+#      `instrumento financiero`,
+#      sector,
+#      flujo,
+#      moneda,
+#      valor
+#    )
+# saveRDS(data_dashboard, "Data_Dashboard.rds")
+```
+
+```{r}
+# Cargo los datos
+data_dashboard <- readRDS("Data_Dashboard.rds")
+```
+
+
+Series Temporales
+=======================================================================
+
+```{r}
+data_dashboard <- data_dashboard %>%
+  mutate(periodo = as.Date(periodo))
+
+# calculo años min/max numéricos 
+min_year <- lubridate::year(min(data_dashboard$periodo, na.rm = TRUE))
+max_year <- lubridate::year(max(data_dashboard$periodo, na.rm = TRUE))
+```
+
+
+```{r}
+div(
+  style = "display: flex; align-items: center; gap: 10px; flex-wrap: wrap;", # wrap permite ir a la siguiente línea si es necesario
+  
+  tags$label("Tipo de flujo:", style = "margin: 0"),
+  div(style = "width: 120px;",
+      selectInput(
+        "flujo_vg", label = NULL,
+        choices = sort(unique(data_dashboard$flujo)),
+        selected = "Neto"
+      )
+  ),
+  
+  tags$label("Rango de años:", style = "margin: 0"),
+  div(style = "width: 220px;",
+      sliderInput(
+        "anio_vg", label = NULL,
+        min = min_year, max = max_year,
+        value = c(min_year, max_year),
+        step = 1, sep = ""
+      )
+  ),
+  
+  tags$label("Predicción contrafactual:", style = "margin: 0"),
+  div(style = "width: 60px;",
+      checkboxInput("contrafactual", label = NULL, value = FALSE)
+  ),
+  
+  tags$label("Escala:", style = "margin: 0"),
+  div(style = "width: 100px;",
+      selectInput("escala_facet", label = NULL,
+                  choices = c("Libre" = "free_y", "Fija" = "fixed"),
+                  selected = "free_y")
+  )
+)
+
+```
+
+Column {.tabset}
+--------------------------------------------------
+
+### Gráficos
+
+```{r}
+renderPlotly({
+
+  # Filtrar todos los países y rango de años
+  data_filtered <- data_dashboard %>%
+    filter(
+      pais %in% unique(data_dashboard$pais),
+      `instrumento financiero` == "Cuenta financiera total",
+      sector == "Total Economía",
+      flujo == input$flujo_vg,
+      lubridate::year(periodo) >= input$anio_vg[1],
+      lubridate::year(periodo) <= input$anio_vg[2]
+    )
+
+  # Color según flujo
+  color_flujo <- case_when(
+    input$flujo_vg == "Neto" ~ "green",
+    input$flujo_vg == "Pasivos" ~ "red",
+    input$flujo_vg == "Activos" ~ "blue",
+    TRUE ~ "black"
+  )
+
+  if (!is.null(input$contrafactual) && input$contrafactual) {
+
+    # Para cada país generar df_pred_full con predicción contrafactual
+    df_list <- lapply(unique(data_filtered$pais), function(p) {
+      
+      data_pais <- data_filtered %>% filter(pais == p)
+      
+      # Valores pre-crisis (hasta 2007)
+      train_pre <- data_pais %>% filter(lubridate::year(periodo) <= 2007)
+      
+      # Número de períodos 2008–2011
+      h_crisis <- sum(lubridate::year(data_pais$periodo) >= 2008 & 
+                      lubridate::year(data_pais$periodo) <= 2011)
+      
+      # Modelo ARIMA pre-crisis
+      modelo_pre <- auto.arima(train_pre$valor)
+      pred_crisis <- forecast(modelo_pre, h = h_crisis)
+      
+      # Combinar valores reales + predicción contrafactual
+      df_pred_full <- data_pais %>% 
+        filter(periodo <= as.Date("2011-12-31")) %>%
+        mutate(
+          Predicho = c(train_pre$valor, as.numeric(pred_crisis$mean)),
+          CI_inf = c(train_pre$valor, pred_crisis$lower[,2]),
+          CI_sup = c(train_pre$valor, pred_crisis$upper[,2]),
+          pais = p
+        )
+      
+      df_pred_full
+    })
+
+    # Unir todos los países
+    df_all <- bind_rows(df_list)
+
+    # Gráfico contrafactual
+    p <- ggplot(df_all, aes(x = periodo)) +
+      geom_line(aes(y = valor/1000, color = "Real"), linewidth = 0.7) +
+      geom_line(aes(y = Predicho/1000, color = "Predicho sin crisis"), linewidth = 0.7) +
+      geom_ribbon(aes(ymin = CI_inf/1000, ymax = CI_sup/1000), fill = "blue", alpha = 0.2) +
+      facet_wrap(~pais, scales = input$escala_facet, ncol = 4) +
+      scale_color_manual(values = c("Real" = "red", "Predicho sin crisis" = "darkgreen")) +
+      labs(
+        title = "",
+        subtitle = "",
+        x = "",
+        y = "Miles de millones EUR",
+        color = ""
+      ) +
+      theme_minimal(base_size = 12) +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.text = element_text(face = "bold")
+      ) +
+      guides(color = "none", fill = "none")
+
+  } else {
+    # Serie normal para todos los países
+    p <- ggplot(data_filtered, aes(x = periodo, y = valor/1000)) +
+      geom_line(color = color_flujo, size = 0.7) +
+      geom_vline(xintercept = as.Date(c("2008-01-01","2011-12-31")),
+                 linetype = "dashed", color = "red") +
+      facet_wrap(~pais, scales = input$escala_facet, ncol = 4) +
+      theme_minimal(base_size = 12) +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.text = element_text(face = "bold")
+      ) +
+      labs(
+        title = "",
+        x = "",
+        y = "Miles de millones EUR"
+      )
+  }
+
+  ggplotly(p)
+})
+```
+
+### Tabla
+
+```{r}
+### Tabla de datos filtrados
+renderTable({
+  req(input$flujo_vg, input$anio_vg)
+
+  # Filtrar datos según inputs
+  data_tabla <- data_dashboard %>%
+    filter(
+      flujo == input$flujo_vg,
+      lubridate::year(periodo) >= as.integer(input$anio_vg[1]),
+      lubridate::year(periodo) <= as.integer(input$anio_vg[2]),
+      `instrumento financiero` == "Cuenta financiera total",
+      sector == "Total Economía"
+    ) %>%
+    mutate(
+      Año = as.integer(lubridate::year(periodo))
+    ) %>%
+    group_by(País = pais, Año) %>%
+    summarise(
+      Valor_mill_EUR = mean(valor / 1000, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    arrange(desc(Año)) %>%
+    pivot_wider(
+      names_from = País,
+      values_from = Valor_mill_EUR
+    ) %>%
+    mutate(across(-Año, ~ prettyNum(round(.x, 1), big.mark = ",")))
+
+  # Mensaje si no hay datos
+  if (nrow(data_tabla) == 0) {
+    return(data.frame(Mensaje = "No hay datos disponibles para esta selección"))
+  }
+
+  data_tabla
+},
+striped = TRUE,
+hover = TRUE,
+spacing = "xs",
+width = "100%")
+
+```
+
+Descomposición por flujo
+=======================================================================
+
+```{r}
+MapaCoroplético <- function(geoj,value,region_labels,legend_title){
+  pal <- colorQuantile("YlOrRd", value, n = 9)
+  leaflet(geoj) %>%  
+    addPolygons(
+      fillColor = ~pal(value), 
+      weight = 2,
+      opacity = 1,
+      color = "white",
+      dashArray = "3",
+      fillOpacity = 0.7,
+      highlightOptions = highlightOptions( 
+        weight = 2,
+        color = rgb(0.2,0.2,0.2),
+        dashArray = "",
+        fillOpacity = 0.7,
+        bringToFront = TRUE
+      ),
+      label = region_labels 
+    ) %>% 
+    addLegend("bottomleft", 
+      pal = pal, 
+      values = value,
+      title = legend_title,
+      labFormat = labelFormat(big.mark = ","),
+      opacity = 1
+    )
+}
+
+```
+
+Column {.sidebar data-width=350}
+--------------------------------------------------
+
+```{r}
+# Widgets de selección
+selectInput(
+  "Atributo.Mapa", 
+  label = "Tipo de Atributo:",
+  choices = c("Activos", "Pasivos", "Neto"),
+  selected = "Neto"
+)
+
+# Sidebar
+selectInput(
+  "Año.Mapa", 
+  label = "Año:",
+  choices = sort(unique(as.numeric(format(data_dashboard$periodo, "%Y"))), decreasing = TRUE),
+  selected = max(as.numeric(format(data_dashboard$periodo, "%Y")))
+)
+
+```
+
+
+```{r}
+traducir_pais <- function(pais){
+  recode(pais,
+         "España" = "Spain",
+         "Alemania" = "Germany",
+         "Francia" = "France",
+         "Italia" = "Italy",
+         "Portugal" = "Portugal",
+         "Grecia" = "Greece",
+         "Países Bajos" = "Netherlands",
+         "Irlanda" = "Ireland",
+         "Finlandia" = "Finland",
+         "Austria" = "Austria",
+         "Bélgica" = "Belgium",
+         "Suecia" = "Sweden",
+         "Dinamarca" = "Denmark",
+         "Polonia" = "Poland",
+         .default = NA_character_)
+}
+
+inputs.processing.iip.año <- reactive({
+  data_dashboard %>%
+    mutate(Año = year(periodo),
+           name_shp = traducir_pais(pais),
+           name_es = recode(pais,
+                            "España" = "España",
+                            "Alemania" = "Alemania",
+                            "Francia" = "Francia",
+                            "Italia" = "Italia",
+                            "Portugal" = "Portugal",
+                            "Grecia" = "Grecia",
+                            "Países Bajos" = "Países Bajos",
+                            "Irlanda" = "Irlanda",
+                            "Finlandia" = "Finlandia",
+                            "Austria" = "Austria",
+                            "Bélgica" = "Bélgica",
+                            "Suecia" = "Suecia",
+                            "Dinamarca" = "Dinamarca",
+                            "Polonia" = "Polonia",
+                            .default = pais)) %>%
+    filter(sector == "Total Economía",
+           !is.na(name_shp)) %>%
+    group_by(name_shp,name_es, Año, flujo) %>%
+    summarise(Valor_mill_EUR = mean(valor, na.rm = TRUE), .groups = "drop") %>%
+    pivot_wider(names_from = flujo, values_from = Valor_mill_EUR) %>%
+    pivot_longer(cols = c("Activos","Pasivos","Neto"), names_to = "Tipo", values_to = "Valor_mill_EUR") %>%
+    filter(Tipo == input$Atributo.Mapa,
+           Año == as.numeric(input$Año.Mapa))
+})
+
+```
+
+```{r}
+renderTable({
+  inputs.processing.iip.año() %>%
+    mutate(
+      Año = as.integer(Año),
+      Valor_mill_EUR = prettyNum(round(Valor_mill_EUR,1),
+                                big.mark = ",", decimal.mark = ".")
+    ) %>%
+    select(País = name_es, Año, Valor_mill_EUR) %>%
+    arrange(desc(as.numeric(gsub(",", "", Valor_mill_EUR))))
+},
+striped = TRUE,
+hover = TRUE,
+spacing = "xs",
+width = "100%"
+)
+```
+
+Column {.tabset}
+--------------------------------------------------
+
+### Mapa Coroplético
+
+```{r}
+leaflet::renderLeaflet({
+  
+  tb <- inputs.processing.iip.año()
+  
+  # Leer geojson como sf
+  geoj <- sf::st_read("geo_countries.geojson", quiet = TRUE)
+  paises_shp <- c("Spain","Germany","France","Italy","Portugal",
+                  "Greece","Netherlands","Ireland","Finland",
+                  "Austria","Belgium","Sweden","Denmark","Poland")
+  
+  join <- geoj %>%
+    filter(ADMIN %in% paises_shp) %>%
+    left_join(tb, by = c("ADMIN" = "name_shp")) %>% 
+    mutate(name_es = recode(ADMIN,
+                          "Spain" = "España",
+                          "Germany" = "Alemania",
+                          "France" = "Francia",
+                          "Italy" = "Italia",
+                          "Portugal" = "Portugal",
+                          "Greece" = "Grecia",
+                          "Netherlands" = "Países Bajos",
+                          "Ireland" = "Irlanda",
+                          "Finland" = "Finlandia",
+                          "Austria" = "Austria",
+                          "Belgium" = "Bélgica",
+                          "Sweden" = "Suecia",
+                          "Denmark" = "Dinamarca",
+                          "Poland" = "Polonia",
+                          .default = NA_character_))
+  
+  etiquetas <- paste0(
+    "<b>", join$name_es, "</b><br>",
+    ifelse(is.na(join$Tipo), "", paste0(join$Tipo, ": ")),
+    ifelse(is.na(join$Valor_mill_EUR), "Sin datos",
+           paste0(round(join$Valor_mill_EUR,1), " mill. €"))
+  ) %>% lapply(htmltools::HTML)
+  
+  MapaCoroplético(
+    geoj = join,
+    value = join$Valor_mill_EUR,
+    region_labels = etiquetas,
+    legend_title = paste("IIP", input$Atributo.IIP)
+  ) %>% setView(lng = 10, lat = 55, zoom = 3)
+})
+
+```
+
+
+### Diagramas de barras
+
+```{r}
+renderPlotly({
+  tb <- inputs.processing.iip.año() 
+
+  ggplot(tb, aes(x = reorder(name_es, Valor_mill_EUR), y = Valor_mill_EUR, fill = Tipo)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    coord_flip() +
+    scale_fill_manual(values = c("Activos" = "deepskyblue1",
+                                 "Pasivos" = "coral1",
+                                 "Neto" = "chartreuse")) +
+    labs(
+      x = "",
+      y = "Miles de millones de euros",
+      title = paste("Posición de Inversión Internacional -", input$Año.Mapa),
+      subtitle = paste("Atributo:", input$Atributo.Mapa)
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(plot.title = element_text(face = "bold"))
+})
+
+```
+
+
+Comparación por categoría 
+=======================================================================
+
+```{r}
+# CÁLCULO DE LA TRANSFORMACIÓN DE YEO–JOHNSON A PARTIR DE UN VECTOR Y UN VALOR DE lambda 
+yeo.johnson <- function(y, lambda) {
+  y_t <- numeric(length(y))
+  
+  # Para y >= 0
+  pos_idx <- which(y >= 0)
+  if (lambda == 0) {
+    y_t[pos_idx] <- log(y[pos_idx] + 1)
+  } else {
+    y_t[pos_idx] <- ((y[pos_idx] + 1)^lambda - 1) / lambda
+  }
+  
+  # Para y < 0
+  neg_idx <- which(y < 0)
+  if (lambda == 2) {
+    y_t[neg_idx] <- -log(-y[neg_idx] + 1)
+  } else {
+    y_t[neg_idx] <- -(((-y[neg_idx] + 1)^(2 - lambda) - 1) / (2 - lambda))
+  }
+  
+  return(y_t)
+}
+
+```
+
+```{r}
+# ESTIMACIÓN DE lambda PARA LA TRANSFORMACIÓN DE YEO–JOHNSON DE UN VECTOR y
+# OPTIMIZANDO  EL R2 DE LA REGRESIÓN LINEAL CON UN VECTOR x.  
+optimize.yeojohnson.R2 <- function(x, y, lambda_range = c(-1, 1.9)) {
+ 
+  # Función objetivo: R² negativo (porque optimize minimiza)
+  r2_neg <- function(lambda) {
+    y_t <- yeo.johnson(y, lambda)
+    modelo <- lm(y_t ~ x)
+    return(-summary(modelo)$r.squared)  # queremos maximizar R²
+  }
+  
+  # Optimización de lambda
+  opt <- optimize(r2_neg, interval = lambda_range)
+  
+  # Se retorna el valor óptimo de lambda 
+  return(opt$minimum)
+}
+
+```
+
+
+<!-- PRIMERA COLUMNA PARA SELECCIÓN DE PARÁMETROS Y MOSTRAR RESULTADOS 
+  SOBRE LA REGRESIÓN LINEAL OBTENIDA ENTRE LAS VARIABLES --> 
+
+Column {.sidebar data-width=250}
+--------------------------------------------------
+
+```{r}
+selectInput(
+"tipo.iip",
+"Ver por:",
+choices = c("Sector", "Instrumento"),
+selected = "Sector"
+)
+
+uiOutput("inputs_comparacion_iip")
+
+selectInput(
+  "y_scale", 
+  label = "Transformación del atributo y",
+  choices = c("none",
+              "log",
+              "YeoJohnson"
+             ), 
+  selected = "none"
+)
+
+selectInput(
+  "Año.Comparación.Atributos", 
+  label = "Año",
+  choices = c("Todos",sort(unique(year(ymd(data_dashboard$periodo))), decreasing = TRUE)), 
+  selected = "Todos"
+)
+
+```
+
+```{r}
+output$inputs_comparacion_iip <- renderUI({
+  if(input$tipo.iip == "Sector"){
+    tagList(
+      selectInput(
+        "x",
+        "Seleccionar Sector eje x:",
+        choices = sort(unique(data_dashboard$sector)),
+        selected = "Bancos Centrales",
+        selectize = TRUE
+      ),
+      selectInput(
+        "x_scale", 
+        label = "Transformación del atributo x",
+        choices = c("none",
+                    "sqrt",    
+                    "log"
+                    ), 
+        selected = "none"
+      ),
+      selectInput(
+        "y",
+        "Seleccionar Sector eje y:",
+        choices = sort(unique(data_dashboard$sector)),
+        selected = "Administraciones Públicas",
+        selectize = TRUE
+      )
+    )
+  } else {
+    tagList(
+      selectInput(
+        "x",
+        "Seleccionar Instrumento eje x:",
+        choices = sort(unique(data_dashboard$`instrumento financiero`)),
+        selected = "Cuenta financiera total",
+        selectize = TRUE
+      ),
+      selectInput(
+        "x_scale", 
+        label = "Transformación del atributo x",
+        choices = c("none",
+                    "sqrt",    
+                    "log"
+                    ), 
+  selected = "none"
+      ),
+      selectInput(
+        "y",
+        "Seleccionar Instrumento eje y:",
+        choices = sort(unique(data_dashboard$`instrumento financiero`)),
+        selected = "Inversión Directa",
+        selectize = TRUE
+      )
+    )
+  }
+})
+
+```
+
+<!-- FUNCIÓN reactive PARA EL PROCESADO DE DATOS DE ESTA PÁGINA --> 
+
+```{r}
+# función reactive que calcula los indicadores seleccionados transformados
+inputs.processing.comparacion.atributos <- reactive( {  
+  tb <- data_dashboard %>%
+  mutate(Año = year(ymd(periodo))) %>%   # Crear columna Año
+  # Filtramos solo el sector o instrumento que interesa, según input$tipo.iip
+  { 
+    if(input$tipo.iip == "Sector"){
+      filter(., sector %in% c(input$x, input$y)) %>% 
+      group_by(Año, pais, sector) %>%   # o instrumento financiero
+      summarise(valor = mean(valor, na.rm = TRUE)) %>%
+      ungroup() 
+    } else {
+      filter(., `instrumento financiero` %in% c(input$x, input$y)) %>% 
+      group_by(Año, pais, `instrumento financiero`) %>%   # o instrumento financiero
+      summarise(valor = mean(valor, na.rm = TRUE)) %>%
+      ungroup()
+    }
+  } %>%
+  # Pivotear para que cada sector/instrumento esté en una columna
+  pivot_wider(
+    names_from = if(input$tipo.iip == "Sector") "sector" else "instrumento financiero",
+    values_from = valor
+  ) %>%
+  select(
+    Año,
+    municipio=pais,
+    x = input$x,
+    y = input$y
+  ) %>%
+  na.omit()   # eliminamos filas con NA
+
+
+  
+  if(input$Año.Comparación.Atributos!="Todos"){
+    tb <- tb %>%
+      filter(Año==input$Año.Comparación.Atributos)
+  }
+    
+  # transformados los indicadores de acuerdo con los parámetros de la transformación
+  if(input$x_scale=="sqrt") tb$x <- sign(tb$x)*sqrt(abs(tb$x))
+  if(input$x_scale=="log") tb$x <-  sign(tb$x)*log(abs(tb$x))
+  if(input$y_scale=="log") tb$y <-  sign(tb$y)*log(abs(tb$y))
+  lambda <- 1  
+  if(input$y_scale=="YeoJohnson"){
+    lambda <- optimize.yeojohnson.R2(tb$x, tb$y) # Cálculo óptimo modelo Yeo-Jonhson 
+    tb$y <- yeo.johnson(tb$y,lambda)
+  }
+  
+  # Cálculo regresión lineal después de transformar las variables. 
+  fit <- lm(y ~ x,data=tb)
+  
+  # devolvemos una lista con todo lo calculado 
+  return(list(tb,fit,lambda))
+})
+``` 
+
+### 
+
+```{r}
+# imprimimos en formato HTML los resultados del análisis de regresión 
+# de los indicadores seleccionados transformados
+shiny::renderUI({
+  
+  # capturamos el resultado del procesado de los inputs 
+  tb <- inputs.processing.comparacion.atributos()[[1]]
+  fit <- inputs.processing.comparacion.atributos()[[2]]
+  lambda <- inputs.processing.comparacion.atributos()[[3]]
+  
+  # imprimimos el resultado en formato HTML 
+  text <- paste(
+    "<strong>LINEAR REGRESSION ANALYSIS</strong> <br>",
+    "<strong>formula:   y=ax+b </strong><br>",
+    "<strong>x: Atributo 1 scaled </strong><br>",
+    "<strong>y: Atributo 2 scaled </strong><br>",
+    "<strong><br>RESULTS</strong><br>",
+    "<strong>correlation:</strong>",round(cor(tb$x,tb$y),digits = 8),
+    "<br><strong>slope (a):</strong>",formatC(fit$coefficients[2], format = "e", digits = 3),
+    "<br><strong>independent (b):</strong>",formatC(fit$coefficients[1], format = "e", digits = 3)
+  )
+  if(input$y_scale=="YeoJohnson"){
+    text <- paste(text,"<br><strong> lambda (YeoJohnson) :</strong>",formatC(lambda, format = "e", digits = 3))
+  } 
+  text <- paste(text,
+     "<br><strong>sd(residuos):</strong>",formatC(summary(fit)$sigma, format = "e", digits = 3),
+     "<br><strong>R2:</strong>",round(summary(fit)$r.squared, digits = 8)           
+  )
+      
+  HTML(text)
+})
+```
+
+
+<!-- NUEVA COLUMNA CON UN DIAGRAMA DE DISPERSIÓN PARA COMPARAR LOS ATRIBUTOS TRANSFORMADOS--> 
+
+Column
+--------------------------------------------------
+
+### Comparación atributos transformados
+
+```{r} 
+# Diagrama de dispersión de los indicadores seleccionados transformados
+# Con la recta de regresión 
+renderPlotly({
+  
+  # capturamos el resultado del procesado de los inputs 
+  # y le añadimos una columna con la combinación municipio/Año 
+  # para usarla en el desplegable
+  tb <- inputs.processing.comparacion.atributos()[[1]] %>%
+    mutate(`pais/año`=paste0(municipio," / ",Año))
+  
+  # dibujamos el diagrama de dispersión 
+  tb %>%
+    ggplot(aes(x,y,label=`pais/año`)) + 
+    geom_point() +
+    theme(legend.position = "none") +
+    labs(x= input$x, y= input$y) +
+    geom_smooth(method = lm, se = FALSE) 
+  
+})
+```
+
+
+<!-- NUEVA COLUMNA PARA IMPRIMIR LOS ATRIBUTOS TRANSFORMADOS--> 
+
+Column {data-width=300}
+--------------------------------------------------
+
+### Valores atributos transformados
+
+```{r}
+# imprimimos la tabla con los valores de los indicadores seleccionados 
+# ordenados por el primer indicador
+renderTable({
+  
+  # capturamos el resultado del procesado de los inputs 
+  tb <- inputs.processing.comparacion.atributos()[[1]]
+  
+  # imprimimos la tabla 
+  tb %>% 
+  arrange(desc(x)) %>% 
+  mutate(Año=as.character(Año)) %>% 
+  mutate(x=prettyNum(round(x,digits=2), big.mark = ",")) %>% 
+  mutate(y=prettyNum(round(y,digits=2), big.mark = ","))
+  
+})
+```
+
+
+Evolución por categoría
+=======================================================================
+
+Column {.sidebar data-width=350}
+--------------------------------------------------
+
+```{r}
+## Column {.sidebar data-width=350}
+
+min_year <- as.integer(lubridate::year(min(data_dashboard$periodo, na.rm = TRUE)))
+max_year <- as.integer(lubridate::year(max(data_dashboard$periodo, na.rm = TRUE)))
+
+# Selector tipo de visualización
+
+selectInput(
+"tipo_iip",
+"Ver por:",
+choices = c("Sector", "Instrumento"),
+selected = "Sector"
+)
+
+# Inputs dinámicos según tipo
+
+uiOutput("inputs_tipo_iip")
+
+# Inputs compartidos
+
+selectInput(
+"Pais.IIP",
+"País:",
+choices = sort(unique(data_dashboard$pais)),
+selected = unique(data_dashboard$pais)[1]
+)
+
+sliderInput(
+"Año.IIP",
+"Rango de años:",
+min = min_year,
+max = max_year,
+value = c(min_year, max_year),
+step = 1,
+sep = ""
+)
+
+selectInput(
+"Atributo.IIP",
+"Tipo de Atributo:",
+choices = c("Activos", "Pasivos", "Neto"),
+selected = "Activos"
+)
+```
+
+```{r}
+output$inputs_tipo_iip <- renderUI({
+if(input$tipo_iip == "Sector"){
+selectInput(
+"Sector.IIP",
+"Seleccionar Sector(es):",
+choices = sort(unique(data_dashboard$sector)),
+selected = c('Bancos Centrales','Administraciones Públicas', 'Sociedades No Financieras', 'Otras Instituciones Financieras'),
+multiple = TRUE,
+selectize = TRUE
+)
+} else {
+selectInput(
+"Instrumento.IIP",
+"Seleccionar Instrumento(s):",
+choices = sort(unique(data_dashboard$`instrumento financiero`)),
+selected = c('Inversión en Cartera (bonos y valores)','Inversión Directa','Otros instrumentos de inversión'),
+multiple = TRUE,
+selectize = TRUE
+)
+}
+})
+```
+
+```{r}
+inputs.processing.iip <- reactive({
+tb <- data_dashboard %>%
+mutate(Año = lubridate::year(periodo)) %>%
+filter(Año >= input$Año.IIP[1],
+Año <= input$Año.IIP[2],
+flujo == input$Atributo.IIP)
+
+if(length(input$Pais.IIP) > 0){
+tb <- tb %>% filter(pais %in% input$Pais.IIP)
+}
+
+if(input$tipo_iip == "Sector"){
+tb <- tb %>% filter(sector %in% input$Sector.IIP)
+} else {
+tb <- tb %>% filter(`instrumento financiero` %in% input$Instrumento.IIP)
+}
+
+tb
+})
+
+```
+
+```{r}
+### Tabla
+renderTable({
+tb <- inputs.processing.iip()
+
+tb_tabla <- if(input$tipo_iip == "Sector"){
+tb %>%
+group_by(pais, sector, Año) %>%
+summarise(Valor_mill_EUR = sum(valor, na.rm = TRUE), .groups = "drop") %>%
+mutate(
+Valor_mill_EUR_num = Valor_mill_EUR,
+Valor_mill_EUR = prettyNum(round(Valor_mill_EUR,1), big.mark = ","),
+Participacion = paste0(round(100 * Valor_mill_EUR_num / sum(Valor_mill_EUR_num, na.rm=TRUE), 1), "%"),
+Año = as.integer(Año)
+) %>%
+select(-Valor_mill_EUR_num)
+} else {
+tb %>%
+group_by(pais, `instrumento financiero`, Año) %>%
+summarise(Valor_mill_EUR = mean(valor, na.rm = TRUE), .groups = "drop") %>%
+mutate(
+Valor_mill_EUR_num = Valor_mill_EUR,
+Valor_mill_EUR = prettyNum(round(Valor_mill_EUR,1), big.mark = ","),
+Participacion = paste0(round(100 * Valor_mill_EUR_num / sum(Valor_mill_EUR_num, na.rm=TRUE), 1), "%"),
+Año = as.integer(Año)
+) %>%
+select(-Valor_mill_EUR_num)
+}
+
+tb_tabla
+},
+striped = TRUE,
+hover = TRUE,
+spacing = "xs",
+width = "100%"
+)
+```
+
+
+Column {.tabset}
+--------------------------------------------------
+
+### Treemap
+
+```{r}
+### Treemap
+renderPlotly({
+  tb <- inputs.processing.iip() %>%
+    mutate(Categoria = if(input$tipo_iip=="Sector") sector else `instrumento financiero`) %>%
+    group_by(pais, Categoria) %>%
+    summarise(Valor_mill_EUR = sum(valor, na.rm = TRUE), .groups = "drop")
+
+  if(nrow(tb) == 0) return(NULL)
+
+  plot_ly(
+    tb,
+    type = "treemap",
+    labels = ~Categoria,
+    parents = ~pais,
+    values = ~Valor_mill_EUR,
+    textinfo = "label+value+percent parent",
+    hovertemplate = paste("<b>%{label}</b><br>",
+                          "País: %{parent}<br>",
+                          "Valor: %{value} mill. €<extra></extra>")
+  )
+})
+
+```
+
+### Radar de composición
+
+```{r}
+### Radar de composición
+renderPlotly({
+  tb <- inputs.processing.iip() %>%
+    mutate(Categoria = if(input$tipo_iip=="Sector") sector else `instrumento financiero`) %>%
+    group_by(pais, Categoria) %>%
+    summarise(Valor_mill_EUR = sum(valor, na.rm = TRUE), .groups = "drop") %>%
+    tidyr::pivot_wider(names_from = Categoria, values_from = Valor_mill_EUR, values_fill = 0)
+
+  if(nrow(tb) == 0 || ncol(tb) < 2) return(NULL)
+
+  plot_ly(type = 'scatterpolar', fill = 'toself') %>%
+    add_trace(
+      r = as.numeric(tb[1, -1]),
+      theta = colnames(tb)[-1],
+      name = tb$pais[1],
+      mode = 'lines+markers'
+    ) %>%
+    layout(polar = list(radialaxis = list(visible = TRUE)), showlegend = TRUE)
+})
+
+```
+
+### Serie temporal
+
+```{r}
+### Serie temporal
+renderPlotly({
+  tb <- inputs.processing.iip() %>%
+    mutate(Categoria = if(input$tipo_iip=="Sector") sector else `instrumento financiero`) %>%
+    filter(!is.na(Categoria)) %>%
+    group_by(Año, Categoria) %>%
+    summarise(Valor_mill_EUR = sum(valor, na.rm = TRUE), .groups = "drop")
+
+  if(nrow(tb) == 0) return(NULL)
+
+  p <- ggplot(tb, aes(x = Año, y = Valor_mill_EUR, color = Categoria)) +
+    geom_line(size = 1.2) +
+    geom_point() +
+    labs(
+      x = "Año",
+      y = "Valor (mill. €)",
+      title = paste("Evolución de la IIP por", input$tipo_iip),
+      subtitle = paste(input$Atributo.IIP)
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(plot.title = element_text(face = "bold"))
+
+  ggplotly(p)
+})
+
+```
+
+
+Predicción con Arima
+=======================================================================
+
+```{r}
+GraficoDinamicoArima95CI <- function(
+ data, # tssible con con los datos originales
+ date, # string con el nombre se la variable temporal en data
+ value, # string con el nombre se la variable numÃ©rica en data
+ prediccion, # objeto con la predicciÃ³n usando ARIMA u otro modelo
+ TITLE # tÃ­tulo del grÃ¡fico 
+){
+  
+  fc <- prediccion %>%
+  mutate(lower = NA) %>% 
+  mutate(upper = NA) 
+
+  for(k in 1:nrow(fc)){
+    fc$lower[k] <- fc$.mean[k] - 1.96*unlist(fc[[value]][k])[2]
+    fc$upper[k] <- fc$.mean[k] + 1.96*unlist(fc[[value]][k])[2]
+  }
+  
+  data2 <- data 
+  x <- data2[[date]][1]
+  if(!(is.numeric(x) && !inherits(x, "Date") && !inherits(x, "POSIXt"))){
+    data2[[date]] <- as.Date(data2[[date]])
+    fc[[date]] <- as.Date(fc[[date]])
+  }
+  
+
+
+p <- plot_ly() %>%
+  add_lines(x=data2[[date]], y = data2[[value]], name = "ObservaciÃ³n", line = list(color = "black")) %>%
+  add_lines(x=fc[[date]], y = fc$.mean, name = "PredicciÃ³n", line = list(color = "blue")) %>%
+  add_ribbons(x = fc[[date]], ymin = fc$lower, ymax = fc$upper, 
+              name = "95% CI", fillcolor = "rgba(0,0,150,0.2)", line = list(width = 0)) %>%
+  layout(title = TITLE)
+
+return(p) 
+}
+```
+
+Column {.sidebar data-width=330}
+--------------------------------------------------
+
+```{r}
+# Widgets generales para todas las subpestañas
+selectInput(
+  "Pais.Arima",
+  label = "País(es):",
+  choices = sort(unique(data_dashboard$pais)),
+  selected = c('España','Dinamarca'),
+  multiple = TRUE
+)
+
+selectInput(
+  "Atributo.Arima",
+  label = "Atributo:",
+  choices = c("Activos","Pasivos","Neto"),
+  selected = "Neto"
+)
+
+numericInput(
+  "Number.forecast.periods",
+  label = "N. Periodos Predicción:",
+  value = 5,
+  min = 1,
+  step = 1
+)
+
+selectInput(
+  "ArimaParameters",
+  label = "Parámetros ARIMA p/d/q",
+  choices = c('free','0/2/0','1/2/1','2/2/2','0/1/0','1/1/1','2/1/2'),
+  selected = 'free'
+)
+```
+
+```{r}
+renderTable({
+  req(input$Pais.Arima, input$Atributo.Arima)
+  
+  tb <- data_dashboard %>%
+    filter(flujo == input$Atributo.Arima,
+           pais %in% input$Pais.Arima)
+  
+  stats_tb <- tb %>%
+    group_by(pais) %>%
+    summarise(
+      Mínimo = min(valor, na.rm=TRUE),
+      Máximo = max(valor, na.rm=TRUE),
+      Media = mean(valor, na.rm=TRUE),
+      Último = valor[which.max(periodo)],
+      .groups="drop"
+    ) %>%
+    tidyr::pivot_longer(cols=-pais, names_to="Estadística", values_to="Valor")
+  
+  stats_tb
+}, striped=TRUE, hover=TRUE, spacing="xs", width="100%")
+
+```
+
+
+Column {.tabset}
+--------------------------------------------------
+
+### Flujo
+
+#### 
+```{r}
+renderPlotly({
+  req(input$Pais.Arima[1], input$Atributo.Arima)
+  
+  tb <- data_dashboard %>%
+    filter(flujo == input$Atributo.Arima,
+           pais %in% input$Pais.Arima[1]) %>%
+    mutate(Año = lubridate::year(periodo)) %>%
+    group_by(pais, Año) %>%
+    summarise(Valor_mill_EUR = mean(valor, na.rm=TRUE), .groups="drop") %>%
+    as_tsibble(index=Año)
+  
+  arima_model <- if(input$ArimaParameters == 'free'){
+    tb %>% model(ARIMA(Valor_mill_EUR))
+  } else {
+    p <- as.numeric(substr(input$ArimaParameters,1,1))
+    d <- as.numeric(substr(input$ArimaParameters,3,3))
+    q <- as.numeric(substr(input$ArimaParameters,5,5))
+    tb %>% model(ARIMA(Valor_mill_EUR ~ 1 + pdq(p,d,q)))
+  }
+  
+  forecast_tbl <- arima_model %>% forecast(h=input$Number.forecast.periods)
+  
+  GraficoDinamicoArima95CI(tb, 'Año', 'Valor_mill_EUR', forecast_tbl, paste('Predicción ARIMA -', input$Pais.Arima[1])) %>% 
+    layout(height = 275)
+})
+```
+
+#### 
+```{r}
+renderPlotly({
+  req(input$Pais.Arima[2], input$Atributo.Arima)
+  
+  tb <- data_dashboard %>%
+    filter(flujo == input$Atributo.Arima,
+           pais %in% input$Pais.Arima[2]) %>%
+    mutate(Año = lubridate::year(periodo)) %>%
+    group_by(pais, Año) %>%
+    summarise(Valor_mill_EUR = mean(valor, na.rm=TRUE), .groups="drop") %>%
+    as_tsibble(index=Año)
+  
+  arima_model <- if(input$ArimaParameters == 'free'){
+    tb %>% model(ARIMA(Valor_mill_EUR))
+  } else {
+    p <- as.numeric(substr(input$ArimaParameters,1,1))
+    d <- as.numeric(substr(input$ArimaParameters,3,3))
+    q <- as.numeric(substr(input$ArimaParameters,5,5))
+    tb %>% model(ARIMA(Valor_mill_EUR ~ 1 + pdq(p,d,q)))
+  }
+  
+  forecast_tbl <- arima_model %>% forecast(h=input$Number.forecast.periods)
+  
+  GraficoDinamicoArima95CI(tb, 'Año', 'Valor_mill_EUR', forecast_tbl, paste('Predicción ARIMA -', input$Pais.Arima[2])) %>% 
+    layout(height = 275)
+})
+```
+
+### Sector
+```{r}
+selectInput(
+"Sector.Arima",
+label = "Sector(es):",
+choices = sort(unique(data_dashboard$sector)),
+selected = unique(data_dashboard$sector)[1]
+)
+```
+
+####
+```{r}
+renderPlotly({
+req(input$Pais.Arima[1], input$Sector.Arima)
+
+tb <- data_dashboard %>%
+filter(sector %in% input$Sector.Arima,
+pais %in% input$Pais.Arima[1],
+flujo == input$Atributo.Arima) %>%
+mutate(Año = lubridate::year(periodo)) %>%
+group_by(pais, Año) %>%
+summarise(Valor_mill_EUR = mean(valor, na.rm=TRUE), .groups="drop") %>%
+as_tsibble(index=Año)
+
+arima_model <- if(input$ArimaParameters == 'free'){
+tb %>% model(ARIMA(Valor_mill_EUR))
+} else {
+p <- as.numeric(substr(input$ArimaParameters,1,1))
+d <- as.numeric(substr(input$ArimaParameters,3,3))
+q <- as.numeric(substr(input$ArimaParameters,5,5))
+tb %>% model(ARIMA(Valor_mill_EUR ~ 1 + pdq(p,d,q)))
+}
+
+forecast_tbl <- arima_model %>% forecast(h=input$Number.forecast.periods)
+
+GraficoDinamicoArima95CI(tb, 'Año', 'Valor_mill_EUR', forecast_tbl, paste('Predicción ARIMA -', input$Pais.Arima[1]))%>% 
+    layout(height = 250)
+})
+```
+
+####
+```{r}
+renderPlotly({
+req(input$Pais.Arima[2], input$Sector.Arima)
+
+tb <- data_dashboard %>%
+filter(sector %in% input$Sector.Arima,
+pais %in% input$Pais.Arima[2],
+flujo == input$Atributo.Arima) %>%
+mutate(Año = lubridate::year(periodo)) %>%
+group_by(pais, Año) %>%
+summarise(Valor_mill_EUR = mean(valor, na.rm=TRUE), .groups="drop") %>%
+as_tsibble(index=Año)
+
+arima_model <- if(input$ArimaParameters == 'free'){
+tb %>% model(ARIMA(Valor_mill_EUR))
+} else {
+p <- as.numeric(substr(input$ArimaParameters,1,1))
+d <- as.numeric(substr(input$ArimaParameters,3,3))
+q <- as.numeric(substr(input$ArimaParameters,5,5))
+tb %>% model(ARIMA(Valor_mill_EUR ~ 1 + pdq(p,d,q)))
+}
+
+forecast_tbl <- arima_model %>% forecast(h=input$Number.forecast.periods)
+
+GraficoDinamicoArima95CI(tb, 'Año', 'Valor_mill_EUR', forecast_tbl, paste('Predicción ARIMA -', input$Pais.Arima[2]))%>% 
+    layout(height = 250)
+})
+```
+
+
+### Instrumento Financiero
+```{r}
+selectInput(
+"Instrumento.Arima",
+label = "Instrumento(s):",
+choices = sort(unique(data_dashboard$`instrumento financiero`)),
+selected = unique(data_dashboard$`instrumento financiero`)[1],
+)
+```
+
+####
+```{r}
+renderPlotly({
+req(input$Pais.Arima[1], input$Instrumento.Arima)
+
+tb <- data_dashboard %>%
+filter(`instrumento financiero` %in% input$Instrumento.Arima,
+pais %in% input$Pais.Arima[1],
+flujo == input$Atributo.Arima) %>%
+mutate(Año = lubridate::year(periodo)) %>%
+group_by(pais, Año) %>%
+summarise(Valor_mill_EUR = mean(valor, na.rm=TRUE), .groups="drop") %>%
+as_tsibble(index=Año)
+
+arima_model <- if(input$ArimaParameters == 'free'){
+tb %>% model(ARIMA(Valor_mill_EUR))
+} else {
+p <- as.numeric(substr(input$ArimaParameters,1,1))
+d <- as.numeric(substr(input$ArimaParameters,3,3))
+q <- as.numeric(substr(input$ArimaParameters,5,5))
+tb %>% model(ARIMA(Valor_mill_EUR ~ 1 + pdq(p,d,q)))
+}
+
+forecast_tbl <- arima_model %>% forecast(h=input$Number.forecast.periods)
+
+GraficoDinamicoArima95CI(tb, 'Año', 'Valor_mill_EUR', forecast_tbl, paste('Predicción ARIMA -', input$Pais.Arima[1])) %>% 
+    layout(height = 250)
+})
+```
+
+####
+```{r}
+renderPlotly({
+req(input$Pais.Arima[2], input$Instrumento.Arima)
+
+tb <- data_dashboard %>%
+filter(`instrumento financiero` %in% input$Instrumento.Arima,
+pais %in% input$Pais.Arima[2],
+flujo == input$Atributo.Arima) %>%
+mutate(Año = lubridate::year(periodo)) %>%
+group_by(pais, Año) %>%
+summarise(Valor_mill_EUR = mean(valor, na.rm=TRUE), .groups="drop") %>%
+as_tsibble(index=Año)
+
+arima_model <- if(input$ArimaParameters == 'free'){
+tb %>% model(ARIMA(Valor_mill_EUR))
+} else {
+p <- as.numeric(substr(input$ArimaParameters,1,1))
+d <- as.numeric(substr(input$ArimaParameters,3,3))
+q <- as.numeric(substr(input$ArimaParameters,5,5))
+tb %>% model(ARIMA(Valor_mill_EUR ~ 1 + pdq(p,d,q)))
+}
+
+forecast_tbl <- arima_model %>% forecast(h=input$Number.forecast.periods)
+
+GraficoDinamicoArima95CI(tb, 'Año', 'Valor_mill_EUR', forecast_tbl, paste('Predicción ARIMA -', input$Pais.Arima[2])) %>% 
+    layout(height = 250)
+})
+```
+
+
+PCA
+=======================================================================
+
+```{r}
+
+div(
+  style = "display: flex; align-items: center; gap: 10px;",
+  tags$label("Último año:", style = "margin: 0"),
+  selectInput(
+    "yearPCA", 
+    label = NULL,
+    choices = c("mean",sort(unique(year(ymd(data_dashboard$periodo))),decreasing = TRUE)), 
+    selected = "mean",
+  )
+)
+
+```
+
+
+Column {.tabset}
+--------------------------------------------------
+
+```{verbatim}
+pca_data <- data_dashboard %>%
+  filter(year(ymd(periodo)) %in% c(2000, 2008, 2012, 2024)) %>%
+  filter(`instrumento financiero` == "Cuenta financiera total") %>%
+  filter(sector %in% c("Total Economía", "Bancos Centrales", "Otros instrumentos de inversión")) %>% 
+  filter(flujo %in% c("Activos", "Pasivos")) %>%
+  mutate(var_name = paste0(year(ymd(periodo)), "/", flujo, "/", contraparte)) %>% 
+  group_by(pais, var_name) %>%
+  summarise(value = sum(valor, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = var_name, values_from = value) %>%
+  mutate(across(-pais, ~replace_na(., 0)))
+
+```
+
+```{r}
+inputs.processing.analisis.atributos <- reactive({
+
+  if(input$yearPCA != "mean") {
+    tb <- data_dashboard %>%
+      filter(year(ymd(periodo)) <= as.numeric(input$yearPCA)) %>%
+      group_by(pais, `instrumento financiero`, sector, flujo) %>%
+      summarise(value = last(valor), .groups = "drop") %>%
+      mutate(var_name = paste0(`instrumento financiero`, "/", sector, "/", flujo)) %>%
+      select(pais, var_name, value) %>%
+      pivot_wider(names_from = var_name, values_from = value, values_fill = 0)
+    
+  } else {
+    tb <- data_dashboard %>%
+      group_by(pais, `instrumento financiero`, sector, flujo) %>%
+      summarise(value = mean(valor, na.rm = TRUE), .groups = "drop") %>%
+      mutate(var_name = paste0(`instrumento financiero`, "/", sector, "/", flujo)) %>%
+      select(pais, var_name, value) %>%
+      pivot_wider(names_from = var_name, values_from = value, values_fill = 0)
+  }
+  
+  # Eliminar columnas sin variación
+  tb <- tb[, sapply(tb, function(x) !all(x == 0))]
+  
+  return(tb)
+})
+
+```
+
+### Atributos originales
+
+```{r}
+renderTable({
+  inputs.processing.analisis.atributos()
+})
+```
+
+### Matriz correlación
+
+```{r}
+# FUNCIÓN PARA DIBUJAR LA MATRIZ DE CORRELACIÓN
+plot_correlation <- function(
+M, # matriz de correlación
+show_values = TRUE # flat para controlar si se imprimen los valores en las celdas
+) {
+  
+  # Texto dentro de la celda (2 decimales)
+  cell_text <- round(M, 2)
+  
+  # Escala personalizada: rojo -> blanco -> azul
+  custom_colors <- list(
+    c(0, "red"),    # mínimo (-1) → azul
+    c(0.5, "white"),# 0 → blanco
+    c(1, "steelblue")    # máximo (+1) → rojo
+  )
+  
+  # Crear heatmap interactivo
+  plot_ly(
+    x = colnames(M),
+    y = rownames(M),
+    z = M,
+    type = "heatmap",
+    colorscale = custom_colors,
+    zmin = -1,
+    zmax = 1,
+    text = if (show_values) cell_text else NULL,
+    texttemplate = if (show_values) "%{text}" else NULL,
+    textfont = list(color = "black"),
+    hovertemplate = "X: %{x}<br>Y: %{y}<br>Correlación: %{z:.4f}<extra></extra>"
+  ) %>%
+    layout(
+      title = "Matriz de correlación interactiva",
+      xaxis = list(title = "", showticklabels = FALSE),
+      yaxis = list(title = "", autorange = "reversed")
+    )
+}
+```
+
+
+```{r}
+# DIBUJAMOS LA MATRIZ DE CORRELACIÓN USANDO LA FUNCIÓN plot_correlation INCLUIDA EN "utilidades.R"
+renderPlotly({
+  inputs.processing.analisis.atributos() %>%
+  select(-pais)  %>% 
+  cor(use = "complete.obs") %>% 
+  plot_correlation(show_values = TRUE) 
+})
+```
+
+
+### Atributos estandarizados
+
+```{r}
+shiny::renderTable({
+  tb <- inputs.processing.analisis.atributos() %>% 
+  column_to_rownames(var="pais") %>%
+  scale() %>%
+  as_tibble() %>% 
+  mutate(pais=inputs.processing.analisis.atributos()$pais) %>%
+  relocate(pais)
+})
+
+```
+
+
+### Componentes Principales
+
+```{r}
+# CALCULAMOS COMPONENTES PRINCIPALES CON LA FUNCIÓN prcomp
+# PARA QUE FUNCIONE, TODOS LAS COLUMNAS DE LA TABLA DEBEN SER NUMÉRICAS Y 
+# SIN NA. POR ELLO, PARA QUE LA COLUMNA location CON EL NOMBRE DEL PAÍS 
+# NO GENERE ERRORES TENEMOS QUE USAR LA FUNCIÓN column_to_rownames PARA
+# QUE LA USE COMO TÍTULO DE LAS FILAS Y LAS DEJE FUERA DEL CÁLCULO DE LAS PC
+pca <- reactive(
+  return(
+    inputs.processing.analisis.atributos() %>%
+    column_to_rownames(var="pais") %>% 
+    prcomp(scale = TRUE)  
+  )
+)
+```
+
+
+```{r}
+# IMPRIMIMOS LAS COMPONENTES PRINCIPALES. COMO LOS NOMBRES DE LOS PAÍSES
+# NO SE HAN GUARDADO AL CALCULAR pca LOS VOLVEMOS A AÑADIR 
+shiny::renderTable({
+  pca()$x %>% as_tibble()  %>% 
+  mutate(pais=inputs.processing.analisis.atributos()$pais) %>%
+  relocate(pais)
+})
+
+```
+
+
+### Pesos combinación lineal PCA
+
+```{r}
+# IMPRIMIMOS LOS PESOS (COEFICIENTES) USADOS PARA CALCULAR LOS PC
+# A PARTIR DE LAS VARIABLES ORIGINALES. 
+shiny::renderTable({
+  as_tibble(pca()$rotation, rownames = "variable")
+})
+```
+
+
+### Varianza explicada
+
+
+```{r} 
+# DIAGRAMA DE BARRAS CON LA VARIANZA EXPLICADA
+# EL Nº DE PC SE PUEDE OBTENER HACIENDO length(pca$sdev)
+renderPlotly({
+ tibble(
+  label=fct_inorder(paste("PC",1:length(pca()$sdev))),
+  varPercent = pca()$sdev^2/sum(pca()$sdev^2) * 100
+) %>%
+  ggplot(aes(x=label,y=varPercent)) +
+    geom_bar(stat = "identity") +
+    labs(x= "Componentes Principales", 
+          y= "Porcentaje varianza explicada"
+    )+
+   geom_text(aes(label=paste0(round(varPercent,digits = 1),"%")), 
+                 size=3,
+                 colour = "blue",
+                 nudge_y = 1.
+             ) 
+  
+})
+```
+
+### Visualización 
+
+```{r}
+# INSERTAMOS LOS SELECTORES PARA ELEGIR LAS PC QUE SE USARÁN EN EL GRÁFICO
+tags$div(
+  style = "display:flex; gap:20px; align-items:center; flex-wrap:wrap;",
+  tags$div(
+    style="display:flex; align-items:center; gap:6px; min-width:200px;",
+    tags$label("Componente eje x", style="margin-bottom:0; white-space:nowrap;"),
+    shiny::numericInput(
+      "PCx",
+      label = NULL,
+      value=1,
+      min=1,
+      max=27,
+      step=1,
+      width = "80px"
+    )
+  ),
+  tags$div(
+    style="display:flex; align-items:center; gap:6px; min-width:200px;",
+    tags$label("Componente eje y", style="margin-bottom:0; white-space:nowrap;"),
+    shiny::numericInput(
+      "PCy",
+      label = NULL,
+      value=2,
+      min=1,
+      max=27,
+      step=1,
+      width = "80px"
+    )
+  )
+)
+```
+
+
+```{r} 
+## DIBUJAMOS EL DIAGRAMA DE DISPERSIÓN CON LAS PC SELECCIONADAS
+highcharter::renderHighchart({
+  hchart(pca(),choices=c(input$PCx,input$PCy)) 
+})
+```

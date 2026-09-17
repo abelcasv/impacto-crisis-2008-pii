@@ -1,0 +1,10 @@
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rproj
+
+data/Data_Filtered.rds
+data/Data_Trabajo.rds
+
+.DS_Store
